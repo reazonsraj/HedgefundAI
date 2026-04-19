@@ -67,7 +67,7 @@ export function useAnalysisStream() {
 
   const cancel = useCallback(() => {
     esRef.current?.close();
-    setState((s) => ({ ...s, isRunning: false }));
+    setState({ isRunning: false, events: [], decisions: null, error: null, runId: null });
   }, []);
 
   return { ...state, startRun, cancel };

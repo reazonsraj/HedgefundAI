@@ -124,6 +124,17 @@ export function PortfolioPage() {
         </>
       )}
 
+      {/* Error display - always visible */}
+      {stream.error && !stream.isRunning && (
+        <div className="mb-4">
+          <div className="bg-[#ef4444]/10 border border-[#ef4444]/30 rounded-lg p-4 text-[#ef4444] text-sm mb-2">
+            Error: {stream.error}
+          </div>
+          <button onClick={() => stream.cancel()} className="text-sm text-[#6366f1] hover:underline">Dismiss</button>
+        </div>
+      )}
+
+      {/* Streaming results */}
       {(stream.isRunning || stream.decisions) && (
         <div>
           {stream.isRunning && <div className="w-full bg-[#222] rounded-full h-2 mb-6"><div className="bg-[#6366f1] h-2 rounded-full transition-all" style={{ width: `${Math.min((agentNames.length / Math.max(selectedAnalysts.length + 2, 1)) * 100, 100)}%` }} /></div>}
@@ -164,7 +175,7 @@ export function PortfolioPage() {
             </div>
           )}
 
-          {stream.error && <div className="bg-[#ef4444]/10 border border-[#ef4444]/30 rounded-lg p-4 text-[#ef4444] text-sm">Error: {stream.error}</div>}
+          {stream.error && <div className="bg-[#ef4444]/10 border border-[#ef4444]/30 rounded-lg p-4 text-[#ef4444] text-sm mt-4">Error: {stream.error}</div>}
           {!stream.isRunning && <button onClick={() => stream.cancel()} className="mt-4 text-sm text-[#6366f1] hover:underline">Start New Analysis</button>}
         </div>
       )}
