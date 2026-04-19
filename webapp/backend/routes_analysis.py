@@ -61,14 +61,17 @@ def _run_analysis_thread(run_id: int, tickers: list[str], portfolio_dict: dict,
         db.commit()
         send_event("run_status", {"status": "running"})
 
-        from src.main import run_hedge_fund
+        from src.main import run_hedge_fund, create_workflow
         from src.utils.progress import progress
+        from src.graph.state import AgentState
+        from langchain_core.messages import HumanMessage
+        import json as _json
 
         def on_agent_update(agent_name, ticker, status, analysis, timestamp):
             if status.lower() == "done" and analysis:
                 try:
-                    analysis_data = json.loads(analysis) if isinstance(analysis, str) else analysis
-                except (json.JSONDecodeError, TypeError):
+                    analysis_data = _json.loads(analysis) if isinstance(analysis, str) else analysis
+                except (_json.JSONDecodeError, TypeError):
                     analysis_data = {}
 
                 if isinstance(analysis_data, dict):
@@ -92,13 +95,39 @@ def _run_analysis_thread(run_id: int, tickers: list[str], portfolio_dict: dict,
             elif status.lower() != "done":
                 send_event("agent_start", {"agent_name": agent_name, "ticker": ticker, "status": status})
 
+        # Disable Rich live display (crashes without terminal)
+        progress.started = False
         progress.register_handler(on_agent_update)
+
         try:
-            result = run_hedge_fund(
-                tickers=tickers, start_date=start_date, end_date=end_date,
-                portfolio=portfolio_dict, show_reasoning=True,
-                selected_analysts=selected_analysts, model_name=model_name, model_provider=model_provider,
-            )
+            # Run the hedge fund workflow directly (bypass run_hedge_fund to avoid Rich terminal issues)
+            workflow = create_workflow(selected_analysts if selected_analysts else None)
+            agent = workflow.compile()
+
+            final_state = agent.invoke({
+                "messages": [HumanMessage(content="Make trading decisions based on the provided data.")],
+                "data": {
+                    "tickers": tickers, "portfolio": portfolio_dict,
+                    "start_date": start_date, "end_date": end_date,
+                    "analyst_signals": {},
+                },
+                "metadata": {
+                    "show_reasoning": True,
+                    "model_name": model_name,
+                    "model_provider": model_provider,
+                },
+            })
+
+            # Parse result
+            try:
+                decisions = _json.loads(final_state["messages"][-1].content)
+            except Exception:
+                decisions = None
+
+            result = {
+                "decisions": decisions,
+                "analyst_signals": final_state["data"].get("analyst_signals", {}),
+            }
         finally:
             progress.unregister_handler(on_agent_update)
 
@@ -124,46 +153,51 @@ def _run_analysis_thread(run_id: int, tickers: list[str], portfolio_dict: dict,
 
 
 @router.post("/run")
-def start_run(body: RunRequest, db: Session = Depends(get_db)):
+async def start_run(body: RunRequest):
     global _active_run_id
     if _active_run_id is not None:
         raise HTTPException(status_code=409, detail="An analysis is already running")
 
-    portfolio = db.query(Portfolio).filter(Portfolio.id == body.portfolio_id).first()
-    if not portfolio:
-        raise HTTPException(status_code=404, detail="Portfolio not found")
+    db = SessionLocal()
+    try:
+        portfolio = db.query(Portfolio).filter(Portfolio.id == body.portfolio_id).first()
+        if not portfolio:
+            raise HTTPException(status_code=404, detail="Portfolio not found")
 
-    tickers = portfolio.tickers
-    if not tickers:
-        raise HTTPException(status_code=400, detail="Portfolio has no tickers")
+        tickers = portfolio.tickers
+        if not tickers:
+            raise HTTPException(status_code=400, detail="Portfolio has no tickers")
 
-    run = AnalysisRun(
-        portfolio_id=body.portfolio_id, model_name=body.model_name, model_provider=body.model_provider,
-        selected_analysts=body.selected_analysts, tickers=tickers, start_date=body.start_date, end_date=body.end_date, status="pending",
-    )
-    db.add(run)
-    db.commit()
-    db.refresh(run)
+        run = AnalysisRun(
+            portfolio_id=body.portfolio_id, model_name=body.model_name, model_provider=body.model_provider,
+            selected_analysts=body.selected_analysts, tickers=tickers, start_date=body.start_date, end_date=body.end_date, status="pending",
+        )
+        db.add(run)
+        db.commit()
+        db.refresh(run)
+        run_id = run.id
 
-    _active_run_id = run.id
-    _run_queues[run.id] = asyncio.Queue()
+        _active_run_id = run_id
+        _run_queues[run_id] = asyncio.Queue()
 
-    portfolio_dict = {
-        "cash": portfolio.initial_cash, "margin_requirement": portfolio.margin_requirement,
-        "margin_used": 0.0,
-        "positions": {t: {"long": 0, "short": 0, "long_cost_basis": 0.0, "short_cost_basis": 0.0, "short_margin_used": 0.0} for t in tickers},
-        "realized_gains": {t: {"long": 0.0, "short": 0.0} for t in tickers},
-    }
+        portfolio_dict = {
+            "cash": portfolio.initial_cash, "margin_requirement": portfolio.margin_requirement,
+            "margin_used": 0.0,
+            "positions": {t: {"long": 0, "short": 0, "long_cost_basis": 0.0, "short_cost_basis": 0.0, "short_margin_used": 0.0} for t in tickers},
+            "realized_gains": {t: {"long": 0.0, "short": 0.0} for t in tickers},
+        }
+    finally:
+        db.close()
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     thread = threading.Thread(
         target=_run_analysis_thread,
-        args=(run.id, tickers, portfolio_dict, body.start_date, body.end_date,
+        args=(run_id, tickers, portfolio_dict, body.start_date, body.end_date,
               body.selected_analysts, body.model_name, body.model_provider, loop),
         daemon=True,
     )
     thread.start()
-    return {"run_id": run.id}
+    return {"run_id": run_id}
 
 
 @router.get("/stream/{run_id}")

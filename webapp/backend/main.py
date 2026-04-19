@@ -60,3 +60,7 @@ if os.path.isdir(FRONTEND_DIR):
 @app.on_event("startup")
 def startup():
     init_db()
+    # Reset any stuck run state from previous server session
+    from webapp.backend import routes_analysis
+    routes_analysis._active_run_id = None
+    routes_analysis._run_queues.clear()

@@ -32,13 +32,19 @@ class AgentProgress:
     def start(self):
         """Start the progress display."""
         if not self.started:
-            self.live.start()
+            try:
+                self.live.start()
+            except Exception:
+                pass  # No terminal available (e.g. running in web server)
             self.started = True
 
     def stop(self):
         """Stop the progress display."""
         if self.started:
-            self.live.stop()
+            try:
+                self.live.stop()
+            except Exception:
+                pass
             self.started = False
 
     def update_status(self, agent_name: str, ticker: Optional[str] = None, status: str = "", analysis: Optional[str] = None):
@@ -73,7 +79,10 @@ class AgentProgress:
 
     def _refresh_display(self):
         """Refresh the progress display."""
-        self.table.columns.clear()
+        try:
+            self.table.columns.clear()
+        except Exception:
+            return
         self.table.add_column(width=100)
 
         # Sort agents with Risk Management and Portfolio Management at the bottom
