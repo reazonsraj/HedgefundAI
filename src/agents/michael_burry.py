@@ -285,9 +285,13 @@ def _analyze_insider_activity(insider_trades):
 # ----- Contrarian sentiment -------------------------------------------------
 
 def _analyze_contrarian_sentiment(news):
-    """Very rough gauge: a wall of recent negative headlines can be a *positive* for a contrarian."""
+    """
+    Expanded gauge: count positive vs negative articles and compute a sentiment ratio.
+    A wall of negative headlines can be a *positive* for a contrarian investor.
+    Also flags potential short squeeze risk when short interest is detectable.
+    """
 
-    max_score = 1
+    max_score = 2
     score = 0
     details: list[str] = []
 
@@ -295,16 +299,42 @@ def _analyze_contrarian_sentiment(news):
         details.append("No recent news")
         return {"score": score, "max_score": max_score, "details": "; ".join(details)}
 
-    # Count negative sentiment articles
+    total = len(news)
     sentiment_negative_count = sum(
         1 for n in news if n.sentiment and n.sentiment.lower() in ["negative", "bearish"]
     )
-    
-    if sentiment_negative_count >= 5:
-        score += 1  # The more hated, the better (assuming fundamentals hold up)
-        details.append(f"{sentiment_negative_count} negative headlines (contrarian opportunity)")
+    sentiment_positive_count = sum(
+        1 for n in news if n.sentiment and n.sentiment.lower() in ["positive", "bullish"]
+    )
+    neutral_count = total - sentiment_negative_count - sentiment_positive_count
+
+    # Sentiment ratio: negative / total (higher = more hated = potential contrarian opportunity)
+    neg_ratio = sentiment_negative_count / total if total > 0 else 0
+    pos_ratio = sentiment_positive_count / total if total > 0 else 0
+
+    details.append(
+        f"News sentiment: {sentiment_positive_count} positive, {sentiment_negative_count} negative, "
+        f"{neutral_count} neutral out of {total} articles "
+        f"(neg ratio {neg_ratio:.0%}, pos ratio {pos_ratio:.0%})"
+    )
+
+    # Contrarian scoring: more hated = more opportunity if fundamentals are solid
+    if neg_ratio >= 0.5:
+        score += 2
+        details.append("Heavy negative sentiment — deep contrarian opportunity if fundamentals hold")
+    elif sentiment_negative_count >= 5:
+        score += 1
+        details.append(f"{sentiment_negative_count} negative headlines — moderate contrarian setup")
     else:
-        details.append("Limited negative press")
+        details.append("Limited negative press — reduced contrarian opportunity")
+
+    # Short squeeze risk check: look for short-related keywords in headlines
+    short_squeeze_signals = sum(
+        1 for n in news
+        if any(kw in (n.title or "").lower() for kw in ["short", "squeeze", "short interest", "heavily shorted"])
+    )
+    if short_squeeze_signals > 0:
+        details.append(f"Short squeeze risk detected: {short_squeeze_signals} articles mention short interest — monitor carefully")
 
     return {"score": score, "max_score": max_score, "details": "; ".join(details)}
 
@@ -330,17 +360,20 @@ def _generate_burry_output(
                 - Be contrarian: hatred in the press can be your friend if fundamentals are solid
                 - Focus on downside first – avoid leveraged balance sheets
                 - Look for hard catalysts such as insider buying, buybacks, or asset sales
-                - Communicate in Burry's terse, data‑driven style
+                - Flag short squeeze risk when high short interest is detected in news
+                - Evaluate news sentiment ratio (negative vs positive articles) as a contrarian signal
+                - Communicate in Burry's terse, data-driven style
 
-                When providing your reasoning, be thorough and specific by:
-                1. Start with the key metric(s) that drove your decision
-                2. Cite concrete numbers (e.g. "FCF yield 14.7%", "EV/EBIT 5.3")
-                3. Highlight risk factors and why they are acceptable (or not)
-                4. Mention relevant insider activity or contrarian opportunities
-                5. Use Burry's direct, number-focused communication style with minimal words
-                
-                For example, if bullish: "FCF yield 12.8%. EV/EBIT 6.2. Debt-to-equity 0.4. Net insider buying 25k shares. Market missing value due to overreaction to recent litigation. Strong buy."
-                For example, if bearish: "FCF yield only 2.1%. Debt-to-equity concerning at 2.3. Management diluting shareholders. Pass."
+                When providing your reasoning, be specific and cite numbers:
+                1. Lead with the key valuation metric (FCF yield, EV/EBIT) and whether it clears the bar
+                2. Assess balance sheet resilience (D/E, net cash/debt position)
+                3. Note insider activity direction and magnitude
+                4. Interpret the news sentiment ratio as contrarian signal or warning
+                5. Flag any short squeeze risk if present
+                6. State your thesis in 1-2 crisp sentences, Burry style
+
+                Keep reasoning under 200 characters. Use Burry's direct, number-first voice.
+                For example: "FCF yield 12.8%. EV/EBIT 6.2. D/E 0.4. 65% negative news = contrarian setup. Net insider buying 25k. Market overreacting. Strong buy."
                 """,
             ),
             (

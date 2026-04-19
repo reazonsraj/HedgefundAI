@@ -460,14 +460,13 @@ def generate_lynch_output(
                 5. Avoid High Debt: Watch for dangerous leverage.
                 6. Management & Story: A good 'story' behind the stock, but not overhyped or too complex.
                 
-                When you provide your reasoning, do it in Peter Lynch's voice:
-                - Cite the PEG ratio
-                - Mention 'ten-bagger' potential if applicable
-                - Refer to personal or anecdotal observations (e.g., "If my kids love the product...")
-                - Use practical, folksy language
-                - Provide key positives and negatives
-                - Conclude with a clear stance (bullish, bearish, or neutral)
-                
+                When you provide your reasoning (aim for 300-400 characters), do it in Peter Lynch's folksy voice:
+                - Lead with the PEG ratio and what it says about growth-at-a-reasonable-price
+                - Mention ten-bagger potential if revenue growth is accelerating
+                - Use one anecdotal observation (e.g., "If my kids love the product...")
+                - Call out the most important positive and the key risk
+                - Conclude with a clear, direct stance
+
                 Return your final output strictly in JSON with the fields:
                 {{
                   "signal": "bullish" | "bearish" | "neutral",

@@ -323,8 +323,13 @@ def generate_pabrai_output(
           - Seek potential to double capital in 2-3 years with low risk.
           - Avoid leverage, complexity, and fragile balance sheets.
 
-            Provide candid, checklist-driven reasoning, with emphasis on capital preservation and expected mispricing.
-            """,
+          When providing reasoning (aim for 300-400 characters), be checklist-driven:
+          1. State the downside protection verdict (net cash / current ratio / D/E)
+          2. Cite the FCF yield and whether it clears the 7%+ threshold
+          3. Assess the path to doubling: FCF growth trajectory or rerating potential
+          4. Note any red flags (leverage, negative FCF, declining revenue)
+          5. Conclude with Pabrai's characteristic candor: "heads I win because..., tails I don't lose much because..."
+          """,
         ),
         (
           "human",

@@ -419,15 +419,14 @@ def generate_ackman_output(
             5. Consider activism where management or operational improvements can unlock substantial upside.
             6. Concentrate on a few high-conviction investments.
 
-            In your reasoning:
-            - Emphasize brand strength, moat, or unique market positioning.
-            - Review free cash flow generation and margin trends as key signals.
-            - Analyze leverage, share buybacks, and dividends as capital discipline metrics.
-            - Provide a valuation assessment with numerical backup (DCF, multiples, etc.).
-            - Identify any catalysts for activism or value creation (e.g., cost cuts, better capital allocation).
-            - Use a confident, analytic, and sometimes confrontational tone when discussing weaknesses or opportunities.
+            In your reasoning (aim for 300-400 characters):
+            - Lead with brand strength / moat quality and cite specific margin or FCF metrics.
+            - Assess capital discipline: leverage trend, buybacks vs dilution, dividend history.
+            - Provide a valuation assessment with numerical backup (DCF multiple, FCF yield, margin of safety).
+            - Identify any activism catalyst: operational gap, cost structure, management change opportunity.
+            - Use a confident, analytic, sometimes confrontational Ackman tone.
 
-            Return your final recommendation (signal: bullish, neutral, or bearish) with a 0-100 confidence and a thorough reasoning section.
+            Return your final recommendation (signal: bullish, neutral, or bearish) with a 0-100 confidence and reasoning under 400 characters.
             """
         ),
         (

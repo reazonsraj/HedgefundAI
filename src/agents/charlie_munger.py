@@ -766,12 +766,12 @@ def make_munger_facts_bundle(analysis: dict[str, any]) -> dict[str, any]:
         "cash_to_revenue": _r(mgmt.get("cash_to_revenue"), 2),
         "share_count_trend": mgmt.get("share_count_trend"),
         "flags": flags,
-        # keep one-liners, very short
+        # keep details concise but informative
         "notes": {
-            "moat": (moat.get("details") or "")[:120],
-            "mgmt": (mgmt.get("details") or "")[:120],
-            "predictability": (pred.get("details") or "")[:120],
-            "valuation": (val.get("details") or "")[:120],
+            "moat": (moat.get("details") or "")[:300],
+            "mgmt": (mgmt.get("details") or "")[:300],
+            "predictability": (pred.get("details") or "")[:300],
+            "valuation": (val.get("details") or "")[:300],
         },
     }
 
@@ -824,7 +824,8 @@ def generate_munger_output(
     template = ChatPromptTemplate.from_messages([
         ("system",
          "You are Charlie Munger. Decide bullish, bearish, or neutral using only the facts. "
-         "Return JSON only. Keep reasoning under 120 characters. "
+         "Return JSON only. Keep reasoning under 300 characters — cite moat strength, management quality, "
+         "predictability, valuation, and a key mental model (e.g., circle of competence, inversion, Lollapalooza effect). "
          "Use the provided confidence exactly; do not change it."),
         ("human",
          "Ticker: {ticker}\n"

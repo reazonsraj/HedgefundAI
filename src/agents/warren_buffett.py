@@ -47,6 +47,9 @@ def warren_buffett_agent(state: AgentState, agent_id: str = "warren_buffett_agen
                 "gross_profit",
                 "revenue",
                 "free_cash_flow",
+                "operating_cash_flow",
+                "research_and_development",
+                "goodwill_and_intangible_assets",
             ],
             end_date,
             period="ttm",
@@ -80,6 +83,9 @@ def warren_buffett_agent(state: AgentState, agent_id: str = "warren_buffett_agen
         progress.update_status(agent_id, ticker, "Calculating intrinsic value")
         intrinsic_value_analysis = calculate_intrinsic_value(financial_line_items)
 
+        progress.update_status(agent_id, ticker, "Analyzing earnings quality")
+        earnings_quality_analysis = analyze_earnings_quality(financial_line_items)
+
         # Calculate total score without circle of competence (LLM will handle that)
         total_score = (
                 fundamental_analysis["score"] +
@@ -87,7 +93,8 @@ def warren_buffett_agent(state: AgentState, agent_id: str = "warren_buffett_agen
                 moat_analysis["score"] +
                 mgmt_analysis["score"] +
                 pricing_power_analysis["score"] +
-                book_value_analysis["score"]
+                book_value_analysis["score"] +
+                earnings_quality_analysis["score"]
         )
 
         # Update max possible score calculation
@@ -96,7 +103,8 @@ def warren_buffett_agent(state: AgentState, agent_id: str = "warren_buffett_agen
                 moat_analysis["max_score"] +
                 mgmt_analysis["max_score"] +
                 5 +  # pricing_power (0-5)
-                5  # book_value_growth (0-5)
+                5 +  # book_value_growth (0-5)
+                3    # earnings_quality (0-3)
         )
 
         # Add margin of safety analysis if we have both intrinsic value and current price
@@ -116,6 +124,7 @@ def warren_buffett_agent(state: AgentState, agent_id: str = "warren_buffett_agen
             "pricing_power_analysis": pricing_power_analysis,
             "book_value_analysis": book_value_analysis,
             "management_analysis": mgmt_analysis,
+            "earnings_quality_analysis": earnings_quality_analysis,
             "intrinsic_value_analysis": intrinsic_value_analysis,
             "market_cap": market_cap,
             "margin_of_safety": margin_of_safety,
@@ -743,6 +752,55 @@ def analyze_pricing_power(financial_line_items: list, metrics: list) -> dict[str
     }
 
 
+def analyze_earnings_quality(financial_line_items: list) -> dict[str, any]:
+    """
+    Check earnings quality: Operating Cash Flow / Net Income ratio.
+    High-quality earnings have OCF > 80% of net income, indicating real cash generation
+    rather than accounting manipulations. Score 0-3 points.
+    """
+    if not financial_line_items:
+        return {"score": 0, "details": "Insufficient data for earnings quality analysis"}
+
+    score = 0
+    reasoning = []
+
+    # Gather OCF and net income across multiple periods
+    ocf_ni_ratios = []
+    for item in financial_line_items[:5]:  # Use up to 5 most recent periods
+        ocf = getattr(item, "operating_cash_flow", None)
+        ni = getattr(item, "net_income", None)
+        if ocf is not None and ni is not None and ni > 0:
+            ocf_ni_ratios.append(ocf / ni)
+
+    if not ocf_ni_ratios:
+        return {"score": 0, "details": "Insufficient OCF or net income data for earnings quality check"}
+
+    avg_ratio = sum(ocf_ni_ratios) / len(ocf_ni_ratios)
+    latest_ratio = ocf_ni_ratios[0]
+
+    if avg_ratio > 1.1:
+        score = 3
+        reasoning.append(f"Excellent earnings quality: avg OCF/NI ratio {avg_ratio:.2f} (cash generation exceeds reported earnings)")
+    elif avg_ratio > 0.8:
+        score = 2
+        reasoning.append(f"Good earnings quality: avg OCF/NI ratio {avg_ratio:.2f} (cash confirms reported earnings)")
+    elif avg_ratio > 0.5:
+        score = 1
+        reasoning.append(f"Moderate earnings quality: avg OCF/NI ratio {avg_ratio:.2f} (some gap between cash and earnings)")
+    else:
+        reasoning.append(f"Poor earnings quality: avg OCF/NI ratio {avg_ratio:.2f} (significant gap — possible accounting concerns)")
+
+    if len(ocf_ni_ratios) > 1 and latest_ratio < 0.5:
+        reasoning.append("Warning: Latest period OCF/NI below 0.5 — red flag")
+
+    return {
+        "score": score,
+        "details": "; ".join(reasoning),
+        "avg_ocf_ni_ratio": avg_ratio,
+        "latest_ocf_ni_ratio": latest_ratio,
+    }
+
+
 def generate_buffett_output(
         ticker: str,
         analysis_data: dict[str, any],
@@ -761,6 +819,7 @@ def generate_buffett_output(
         "pricing_power": analysis_data.get("pricing_power_analysis", {}).get("details"),
         "book_value": analysis_data.get("book_value_analysis", {}).get("details"),
         "management": analysis_data.get("management_analysis", {}).get("details"),
+        "earnings_quality": analysis_data.get("earnings_quality_analysis", {}).get("details"),
         "intrinsic_value": analysis_data.get("intrinsic_value_analysis", {}).get("intrinsic_value"),
         "market_cap": analysis_data.get("market_cap"),
         "margin_of_safety": analysis_data.get("margin_of_safety"),
@@ -777,6 +836,7 @@ def generate_buffett_output(
                 "- Competitive moat\n"
                 "- Management quality\n"
                 "- Financial strength\n"
+                "- Earnings quality (OCF vs net income — real cash vs accounting tricks)\n"
                 "- Valuation vs intrinsic value\n"
                 "- Long-term prospects\n"
                 "\n"
@@ -792,7 +852,8 @@ def generate_buffett_output(
                 "- 30-49%: Outside my expertise or concerning fundamentals\n"
                 "- 10-29%: Poor business or significantly overvalued\n"
                 "\n"
-                "Keep reasoning under 120 characters. Do not invent data. Return JSON only."
+                "Keep reasoning under 300 characters. Cite key metrics (ROE, margin of safety, moat strength, earnings quality). "
+                "Do not invent data. Return JSON only."
             ),
             (
                 "human",

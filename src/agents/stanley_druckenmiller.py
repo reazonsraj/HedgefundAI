@@ -554,16 +554,15 @@ def generate_druckenmiller_output(
               - Watch out for high leverage or extreme volatility that threatens capital.
               - Output a JSON object with signal, confidence, and a reasoning string.
               
-              When providing your reasoning, be thorough and specific by:
-              1. Explaining the growth and momentum metrics that most influenced your decision
-              2. Highlighting the risk-reward profile with specific numerical evidence
-              3. Discussing market sentiment and catalysts that could drive price action
-              4. Addressing both upside potential and downside risks
-              5. Providing specific valuation context relative to growth prospects
-              6. Using Stanley Druckenmiller's decisive, momentum-focused, and conviction-driven voice
-              
-              For example, if bullish: "The company shows exceptional momentum with revenue accelerating from 22% to 35% YoY and the stock up 28% over the past three months. Risk-reward is highly asymmetric with 70% upside potential based on FCF multiple expansion and only 15% downside risk given the strong balance sheet with 3x cash-to-debt. Insider buying and positive market sentiment provide additional tailwinds..."
-              For example, if bearish: "Despite recent stock momentum, revenue growth has decelerated from 30% to 12% YoY, and operating margins are contracting. The risk-reward proposition is unfavorable with limited 10% upside potential against 40% downside risk. The competitive landscape is intensifying, and insider selling suggests waning confidence. I'm seeing better opportunities elsewhere with more favorable setups..."
+              When providing your reasoning (aim for 300-400 characters), use Druckenmiller's decisive voice:
+              1. State the growth momentum verdict first: is revenue/EPS growth accelerating or decelerating?
+              2. Cite the price momentum metric and whether the trend is your friend
+              3. Quantify the asymmetric risk-reward: estimated upside % vs downside risk %
+              4. Note sentiment and insider signals as confirming or contradicting evidence
+              5. Deliver a confident, decisive conclusion — he is never wishy-washy
+
+              For example, if bullish: "Revenue CAGR 35% and accelerating; stock +28% — momentum is on our side. FCF yield 8%, D/E 0.25. Risk-reward: 70% upside vs 15% downside. Insider buying + positive sentiment. Asymmetric setup — aggressive buy."
+              For example, if bearish: "Revenue growth decelerating from 30% to 12%; stock -15% already rolling over. High D/E 1.8x is a fragility risk. Risk-reward unfavorable: 10% upside vs 40% downside. Insider selling. Cut losses — better opportunities exist."
               """,
             ),
             (
