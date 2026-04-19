@@ -21,6 +21,14 @@ from src.data.models import (
     InsiderTradeResponse,
     CompanyFactsResponse,
 )
+from src.tools.yfinance_provider import (
+    get_prices_yf,
+    get_financial_metrics_yf,
+    get_market_cap_yf,
+    search_line_items_yf,
+    get_insider_trades_yf,
+    get_company_news_yf,
+)
 
 # Global cache instance
 _cache = get_cache()
@@ -78,7 +86,10 @@ def get_prices(ticker: str, start_date: str, end_date: str, api_key: str = None)
     url = f"https://api.financialdatasets.ai/prices/?ticker={ticker}&interval=day&interval_multiplier=1&start_date={start_date}&end_date={end_date}"
     response = _make_api_request(url, headers)
     if response.status_code != 200:
-        return []
+        prices = get_prices_yf(ticker, start_date, end_date)
+        if prices:
+            _cache.set_prices(cache_key, [p.model_dump() for p in prices])
+        return prices
 
     # Parse response with Pydantic model
     try:
@@ -86,10 +97,13 @@ def get_prices(ticker: str, start_date: str, end_date: str, api_key: str = None)
         prices = price_response.prices
     except Exception as e:
         logger.warning("Failed to parse price response for %s: %s", ticker, e)
-        return []
+        return get_prices_yf(ticker, start_date, end_date)
 
     if not prices:
-        return []
+        # Fallback to Yahoo Finance
+        prices = get_prices_yf(ticker, start_date, end_date)
+        if not prices:
+            return []
 
     # Cache the results using the comprehensive cache key
     _cache.set_prices(cache_key, [p.model_dump() for p in prices])
@@ -120,7 +134,7 @@ def get_financial_metrics(
     url = f"https://api.financialdatasets.ai/financial-metrics/?ticker={ticker}&report_period_lte={end_date}&limit={limit}&period={period}"
     response = _make_api_request(url, headers)
     if response.status_code != 200:
-        return []
+        return get_financial_metrics_yf(ticker, end_date, period, limit)
 
     # Parse response with Pydantic model
     try:
@@ -128,10 +142,13 @@ def get_financial_metrics(
         financial_metrics = metrics_response.financial_metrics
     except Exception as e:
         logger.warning("Failed to parse financial metrics response for %s: %s", ticker, e)
-        return []
+        return get_financial_metrics_yf(ticker, end_date, period, limit)
 
     if not financial_metrics:
-        return []
+        # Fallback to Yahoo Finance
+        financial_metrics = get_financial_metrics_yf(ticker, end_date, period, limit)
+        if not financial_metrics:
+            return []
 
     # Cache the results as dicts using the comprehensive cache key
     _cache.set_financial_metrics(cache_key, [m.model_dump() for m in financial_metrics])
@@ -174,7 +191,8 @@ def search_line_items(
         logger.warning("Failed to parse line items response for %s: %s", ticker, e)
         return []
     if not search_results:
-        return []
+        # Fallback to Yahoo Finance
+        return search_line_items_yf(ticker, line_items, end_date, period, limit)
 
     # Cache the results
     return search_results[:limit]
@@ -239,7 +257,10 @@ def get_insider_trades(
             break
 
     if not all_trades:
-        return []
+        # Fallback to Yahoo Finance
+        all_trades = get_insider_trades_yf(ticker, end_date, start_date, limit)
+        if not all_trades:
+            return []
 
     # Cache the results using the comprehensive cache key
     _cache.set_insider_trades(cache_key, [trade.model_dump() for trade in all_trades])
@@ -305,7 +326,10 @@ def get_company_news(
             break
 
     if not all_news:
-        return []
+        # Fallback to Yahoo Finance
+        all_news = get_company_news_yf(ticker, end_date, start_date, limit)
+        if not all_news:
+            return []
 
     # Cache the results using the comprehensive cache key
     _cache.set_company_news(cache_key, [news.model_dump() for news in all_news])
@@ -343,7 +367,8 @@ def get_market_cap(
     market_cap = financial_metrics[0].market_cap
 
     if not market_cap:
-        return None
+        # Fallback to Yahoo Finance
+        return get_market_cap_yf(ticker)
 
     return market_cap
 
