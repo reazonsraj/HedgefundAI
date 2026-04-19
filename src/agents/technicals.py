@@ -216,8 +216,8 @@ def calculate_trend_signals(prices_df):
         "metrics": {
             "adx": safe_float(adx["adx"].iloc[-1]),
             "trend_strength": safe_float(trend_strength),
-            "volume_ratio": volume_ratio,
-            "volume_confirmed": volume_confirmed,
+            "volume_ratio": safe_float(volume_ratio),
+            "volume_confirmed": int(volume_confirmed),
         },
     }
 
@@ -471,8 +471,8 @@ def calculate_macd_signals(prices_df):
             "macd": safe_float(macd_cur),
             "macd_signal": safe_float(sig_cur),
             "macd_histogram": safe_float(hist_cur),
-            "macd_rising": macd_rising,
-            "signal_rising": signal_rising,
+            "macd_rising": int(macd_rising),
+            "signal_rising": int(signal_rising),
         },
     }
 
