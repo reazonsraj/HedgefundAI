@@ -12,6 +12,7 @@ from webapp.backend.models import AnalysisRun, AnalysisResult, Portfolio
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 
 _active_run_id: int | None = None
+_active_thread: threading.Thread | None = None
 _run_queues: dict[int, asyncio.Queue] = {}
 
 
@@ -152,11 +153,26 @@ def _run_analysis_thread(run_id: int, tickers: list[str], portfolio_dict: dict,
         db.close()
 
 
+@router.post("/reset")
+async def reset_run():
+    """Force-reset the active run state if stuck."""
+    global _active_run_id, _active_thread
+    _active_run_id = None
+    _active_thread = None
+    _run_queues.clear()
+    return {"status": "reset"}
+
+
 @router.post("/run")
 async def start_run(body: RunRequest):
-    global _active_run_id
+    global _active_run_id, _active_thread
+    # Auto-reset if the thread died
     if _active_run_id is not None:
-        raise HTTPException(status_code=409, detail="An analysis is already running")
+        if _active_thread is None or not _active_thread.is_alive():
+            _active_run_id = None
+            _active_thread = None
+        else:
+            raise HTTPException(status_code=409, detail="An analysis is already running")
 
     db = SessionLocal()
     try:
@@ -196,6 +212,7 @@ async def start_run(body: RunRequest):
               body.selected_analysts, body.model_name, body.model_provider, loop),
         daemon=True,
     )
+    _active_thread = thread
     thread.start()
     return {"run_id": run_id}
 
