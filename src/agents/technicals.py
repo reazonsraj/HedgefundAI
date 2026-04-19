@@ -82,13 +82,18 @@ def technical_analyst_agent(state: AgentState, agent_id: str = "technical_analys
         progress.update_status(agent_id, ticker, "Statistical analysis")
         stat_arb_signals = calculate_stat_arb_signals(prices_df)
 
+        progress.update_status(agent_id, ticker, "Calculating MACD signals")
+        macd_signals = calculate_macd_signals(prices_df)
+
         # Combine all signals using a weighted ensemble approach
+        # Weights: trend 20%, mean_reversion 18%, momentum 20%, volatility 12%, stat_arb 15%, macd 15%
         strategy_weights = {
-            "trend": 0.25,
-            "mean_reversion": 0.20,
-            "momentum": 0.25,
-            "volatility": 0.15,
+            "trend": 0.20,
+            "mean_reversion": 0.18,
+            "momentum": 0.20,
+            "volatility": 0.12,
             "stat_arb": 0.15,
+            "macd": 0.15,
         }
 
         progress.update_status(agent_id, ticker, "Combining signals")
@@ -99,6 +104,7 @@ def technical_analyst_agent(state: AgentState, agent_id: str = "technical_analys
                 "momentum": momentum_signals,
                 "volatility": volatility_signals,
                 "stat_arb": stat_arb_signals,
+                "macd": macd_signals,
             },
             strategy_weights,
         )
@@ -133,6 +139,11 @@ def technical_analyst_agent(state: AgentState, agent_id: str = "technical_analys
                     "confidence": round(stat_arb_signals["confidence"] * 100),
                     "metrics": normalize_pandas(stat_arb_signals["metrics"]),
                 },
+                "macd": {
+                    "signal": macd_signals["signal"],
+                    "confidence": round(macd_signals["confidence"] * 100),
+                    "metrics": normalize_pandas(macd_signals["metrics"]),
+                },
             },
         }
         progress.update_status(agent_id, ticker, "Done", analysis=json.dumps(technical_analysis, indent=4))
@@ -159,7 +170,9 @@ def technical_analyst_agent(state: AgentState, agent_id: str = "technical_analys
 
 def calculate_trend_signals(prices_df):
     """
-    Advanced trend following strategy using multiple timeframes and indicators
+    Advanced trend following strategy using multiple timeframes and indicators.
+    Includes volume-weighted price confirmation: price moves must be backed by
+    above-average volume to receive full confidence.
     """
     # Calculate EMAs for multiple timeframes
     ema_8 = calculate_ema(prices_df, 8)
@@ -173,15 +186,26 @@ def calculate_trend_signals(prices_df):
     short_trend = ema_8 > ema_21
     medium_trend = ema_21 > ema_55
 
+    # Volume-weighted price confirmation (VWAP-like check)
+    # Price move on above-average volume is considered confirmed
+    vol_ma_20 = prices_df["volume"].rolling(window=20).mean()
+    current_volume = prices_df["volume"].iloc[-1]
+    avg_volume = vol_ma_20.iloc[-1]
+    volume_confirmed = (current_volume > avg_volume) if (avg_volume > 0) else False
+    volume_ratio = safe_float(current_volume / avg_volume) if (avg_volume > 0) else 1.0
+
     # Combine signals with confidence weighting
     trend_strength = adx["adx"].iloc[-1] / 100.0
 
+    # Reduce confidence by 20 % when volume does not confirm the move
+    volume_multiplier = 1.0 if volume_confirmed else 0.8
+
     if short_trend.iloc[-1] and medium_trend.iloc[-1]:
         signal = "bullish"
-        confidence = trend_strength
+        confidence = trend_strength * volume_multiplier
     elif not short_trend.iloc[-1] and not medium_trend.iloc[-1]:
         signal = "bearish"
-        confidence = trend_strength
+        confidence = trend_strength * volume_multiplier
     else:
         signal = "neutral"
         confidence = 0.5
@@ -192,13 +216,16 @@ def calculate_trend_signals(prices_df):
         "metrics": {
             "adx": safe_float(adx["adx"].iloc[-1]),
             "trend_strength": safe_float(trend_strength),
+            "volume_ratio": volume_ratio,
+            "volume_confirmed": volume_confirmed,
         },
     }
 
 
 def calculate_mean_reversion_signals(prices_df):
     """
-    Mean reversion strategy using statistical measures and Bollinger Bands
+    Mean reversion strategy using statistical measures, Bollinger Bands,
+    and Stochastic RSI as an additional confirmation signal.
     """
     # Calculate z-score of price relative to moving average
     ma_50 = prices_df["close"].rolling(window=50).mean()
@@ -212,16 +239,26 @@ def calculate_mean_reversion_signals(prices_df):
     rsi_14 = calculate_rsi(prices_df, 14)
     rsi_28 = calculate_rsi(prices_df, 28)
 
+    # Stochastic RSI — additional confirmation signal
+    stoch_rsi = calculate_stoch_rsi(prices_df, 14)
+    stoch_rsi_val = safe_float(stoch_rsi.iloc[-1], default=0.5)
+
     # Mean reversion signals
     price_vs_bb = (prices_df["close"].iloc[-1] - bb_lower.iloc[-1]) / (bb_upper.iloc[-1] - bb_lower.iloc[-1])
 
-    # Combine signals
+    # Stoch RSI confirmation: oversold (<0.2) confirms bullish, overbought (>0.8) confirms bearish
+    stoch_confirms_bullish = stoch_rsi_val < 0.2
+    stoch_confirms_bearish = stoch_rsi_val > 0.8
+
+    # Combine signals — Stoch RSI boosts confidence by up to 20 % when confirming
     if z_score.iloc[-1] < -2 and price_vs_bb < 0.2:
         signal = "bullish"
-        confidence = min(abs(z_score.iloc[-1]) / 4, 1.0)
+        base_conf = min(abs(z_score.iloc[-1]) / 4, 1.0)
+        confidence = min(base_conf * (1.2 if stoch_confirms_bullish else 1.0), 1.0)
     elif z_score.iloc[-1] > 2 and price_vs_bb > 0.8:
         signal = "bearish"
-        confidence = min(abs(z_score.iloc[-1]) / 4, 1.0)
+        base_conf = min(abs(z_score.iloc[-1]) / 4, 1.0)
+        confidence = min(base_conf * (1.2 if stoch_confirms_bearish else 1.0), 1.0)
     else:
         signal = "neutral"
         confidence = 0.5
@@ -234,19 +271,27 @@ def calculate_mean_reversion_signals(prices_df):
             "price_vs_bb": safe_float(price_vs_bb),
             "rsi_14": safe_float(rsi_14.iloc[-1]),
             "rsi_28": safe_float(rsi_28.iloc[-1]),
+            "stoch_rsi": stoch_rsi_val,
         },
     }
 
 
 def calculate_momentum_signals(prices_df):
     """
-    Multi-factor momentum strategy
+    Multi-factor momentum strategy.
+    Includes Rate of Change (ROC) for 5-day and 10-day periods alongside
+    the existing 1m / 3m / 6m rolling returns.
     """
-    # Price momentum
+    # Price momentum (rolling cumulative returns)
     returns = prices_df["close"].pct_change()
     mom_1m = returns.rolling(21).sum()
     mom_3m = returns.rolling(63).sum()
     mom_6m = returns.rolling(126).sum()
+
+    # Short-term Rate of Change (ROC) — percentage change over N periods
+    # ROC = (close_t / close_{t-n} - 1) * 100
+    roc_5 = prices_df["close"].pct_change(periods=5) * 100
+    roc_10 = prices_df["close"].pct_change(periods=10) * 100
 
     # Volume momentum
     volume_ma = prices_df["volume"].rolling(21).mean()
@@ -255,8 +300,14 @@ def calculate_momentum_signals(prices_df):
     # Relative strength
     # (would compare to market/sector in real implementation)
 
-    # Calculate momentum score
-    momentum_score = (0.4 * mom_1m + 0.3 * mom_3m + 0.3 * mom_6m).iloc[-1]
+    # Calculate momentum score — ROC signals blend with longer-term momentum
+    momentum_score = (
+        0.3 * mom_1m
+        + 0.25 * mom_3m
+        + 0.25 * mom_6m
+        + 0.1 * (roc_5 / 100)   # normalise ROC back to decimal
+        + 0.1 * (roc_10 / 100)
+    ).iloc[-1]
 
     # Volume confirmation
     volume_confirmation = volume_momentum.iloc[-1] > 1.0
@@ -278,6 +329,8 @@ def calculate_momentum_signals(prices_df):
             "momentum_1m": safe_float(mom_1m.iloc[-1]),
             "momentum_3m": safe_float(mom_3m.iloc[-1]),
             "momentum_6m": safe_float(mom_6m.iloc[-1]),
+            "roc_5": safe_float(roc_5.iloc[-1]),
+            "roc_10": safe_float(roc_10.iloc[-1]),
             "volume_momentum": safe_float(volume_momentum.iloc[-1]),
         },
     }
@@ -365,6 +418,61 @@ def calculate_stat_arb_signals(prices_df):
             "hurst_exponent": safe_float(hurst),
             "skewness": safe_float(skew.iloc[-1]),
             "kurtosis": safe_float(kurt.iloc[-1]),
+        },
+    }
+
+
+def calculate_macd_signals(prices_df):
+    """
+    MACD strategy using the classic (12, 26, 9) parameters.
+
+    Bullish when:  MACD line is above the signal line AND both are rising.
+    Bearish when:  MACD line is below the signal line AND both are falling.
+    Confidence is scaled by the absolute histogram magnitude relative to
+    recent histogram range so that larger divergences carry higher confidence.
+    """
+    macd_data = calculate_macd(prices_df)
+    macd_line = macd_data["macd"]
+    signal_line = macd_data["signal_line"]
+    histogram = macd_data["histogram"]
+
+    # Current and previous values for "rising" check
+    macd_cur = macd_line.iloc[-1]
+    macd_prev = macd_line.iloc[-2] if len(macd_line) >= 2 else macd_cur
+    sig_cur = signal_line.iloc[-1]
+    sig_prev = signal_line.iloc[-2] if len(signal_line) >= 2 else sig_cur
+    hist_cur = histogram.iloc[-1]
+
+    macd_rising = macd_cur > macd_prev
+    signal_rising = sig_cur > sig_prev
+    macd_above_signal = macd_cur > sig_cur
+
+    # Scale confidence by histogram magnitude vs recent 26-bar range
+    hist_range = histogram.rolling(26).apply(lambda x: x.max() - x.min(), raw=True).iloc[-1]
+    if hist_range and hist_range > 0:
+        hist_magnitude = min(abs(hist_cur) / (hist_range / 2), 1.0)
+    else:
+        hist_magnitude = 0.5
+
+    if macd_above_signal and macd_rising and signal_rising:
+        signal = "bullish"
+        confidence = hist_magnitude
+    elif not macd_above_signal and not macd_rising and not signal_rising:
+        signal = "bearish"
+        confidence = hist_magnitude
+    else:
+        signal = "neutral"
+        confidence = 0.5
+
+    return {
+        "signal": signal,
+        "confidence": confidence,
+        "metrics": {
+            "macd": safe_float(macd_cur),
+            "macd_signal": safe_float(sig_cur),
+            "macd_histogram": safe_float(hist_cur),
+            "macd_rising": macd_rising,
+            "signal_rising": signal_rising,
         },
     }
 
@@ -504,9 +612,49 @@ def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     return true_range.rolling(period).mean()
 
 
+def calculate_macd(prices_df: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9) -> dict:
+    """
+    Calculate MACD (Moving Average Convergence Divergence).
+
+    Args:
+        prices_df: DataFrame with close prices
+        fast: Fast EMA period (default 12)
+        slow: Slow EMA period (default 26)
+        signal: Signal line EMA period (default 9)
+
+    Returns:
+        dict with 'macd', 'signal_line', and 'histogram' as pd.Series
+    """
+    ema_fast = prices_df["close"].ewm(span=fast, adjust=False).mean()
+    ema_slow = prices_df["close"].ewm(span=slow, adjust=False).mean()
+    macd_line = ema_fast - ema_slow
+    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+    histogram = macd_line - signal_line
+    return {"macd": macd_line, "signal_line": signal_line, "histogram": histogram}
+
+
+def calculate_stoch_rsi(prices_df: pd.DataFrame, period: int = 14) -> pd.Series:
+    """
+    Calculate Stochastic RSI — RSI normalised to 0-1 over the last `period` bars.
+
+    Args:
+        prices_df: DataFrame with close prices
+        period: Lookback period (default 14)
+
+    Returns:
+        pd.Series: Stochastic RSI values in [0, 1]
+    """
+    rsi = calculate_rsi(prices_df, period)
+    rsi_min = rsi.rolling(window=period).min()
+    rsi_max = rsi.rolling(window=period).max()
+    denom = rsi_max - rsi_min
+    stoch_rsi = (rsi - rsi_min) / denom.where(denom != 0, other=np.nan)
+    return stoch_rsi.fillna(0.5)
+
+
 def calculate_hurst_exponent(price_series: pd.Series, max_lag: int = 20) -> float:
     """
-    Calculate Hurst Exponent to determine long-term memory of time series
+    Calculate Hurst Exponent using the R/S (rescaled range) method.
     H < 0.5: Mean reverting series
     H = 0.5: Random walk
     H > 0.5: Trending series
@@ -518,14 +666,29 @@ def calculate_hurst_exponent(price_series: pd.Series, max_lag: int = 20) -> floa
     Returns:
         float: Hurst exponent
     """
+    prices = np.array(price_series.dropna())
+    if len(prices) < max_lag * 2:
+        return 0.5  # default to random walk
+    log_prices = np.log(prices)
     lags = range(2, max_lag)
-    # Add small epsilon to avoid log(0)
-    tau = [max(1e-8, np.sqrt(np.std(np.subtract(price_series[lag:], price_series[:-lag])))) for lag in lags]
-
-    # Return the Hurst exponent from linear fit
-    try:
-        reg = np.polyfit(np.log(lags), np.log(tau), 1)
-        return reg[0]  # Hurst exponent is the slope
-    except (ValueError, RuntimeWarning):
-        # Return 0.5 (random walk) if calculation fails
+    rs_values = []
+    for lag in lags:
+        segments = len(log_prices) // lag
+        if segments < 1:
+            continue
+        rs_list = []
+        for i in range(segments):
+            segment = log_prices[i * lag:(i + 1) * lag]
+            mean_adj = segment - np.mean(segment)
+            cumdev = np.cumsum(mean_adj)
+            r = np.max(cumdev) - np.min(cumdev)
+            s = np.std(segment, ddof=1)
+            if s > 0:
+                rs_list.append(r / s)
+        if rs_list:
+            rs_values.append((np.log(lag), np.log(np.mean(rs_list))))
+    if len(rs_values) < 2:
         return 0.5
+    x, y = zip(*rs_values)
+    slope, _ = np.polyfit(x, y, 1)
+    return max(0.0, min(1.0, slope))
